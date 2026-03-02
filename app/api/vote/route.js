@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import sql, { initDB } from '../../lib/db'
+import sql, { initDB } from '../../../lib/db'
 
 const VOTES_TO_QUALIFY = 50
 

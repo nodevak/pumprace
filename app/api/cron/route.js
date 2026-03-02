@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import sql, { initDB } from '../../lib/db'
-import { fetchMcap } from '../../lib/dexscreener'
+import sql, { initDB } from '../../../lib/db'
+import { fetchMcap } from '../../../lib/dexscreener'
 
 const RACE_DURATION_MS = 4 * 60 * 60 * 1000 // 4 hours
 const RUG_THRESHOLD = 0.05 // 95% drop = rugged
