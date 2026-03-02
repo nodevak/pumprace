@@ -1,10 +1,9 @@
 'use client'
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Navbar from '../components/Navbar'
-import { formatMcap, timeAgo } from '@/lib/format'
+import { formatMcap, timeAgo } from '../../lib/format'
 
 const VOTES_TO_QUALIFY = 50
-const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
 
 export default function NominatePage() {
   const [ca, setCa] = useState('')
@@ -15,10 +14,6 @@ export default function NominatePage() {
   const [votingId, setVotingId] = useState(null)
   const [voteMsg, setVoteMsg] = useState({})
   const [votedIds, setVotedIds] = useState(new Set())
-  const nominateTurnstileRef = useRef(null)
-  const voteTurnstileRefs = useRef({})
-  const nominateTurnstileToken = useRef(null)
-  const voteTurnstileTokens = useRef({})
 
   const fetchTokens = useCallback(async () => {
     try {
@@ -34,33 +29,6 @@ export default function NominatePage() {
 
   useEffect(() => { fetchTokens() }, [fetchTokens])
 
-  // Load Turnstile script
-  useEffect(() => {
-    if (document.getElementById('cf-turnstile-script')) return
-    const script = document.createElement('script')
-    script.id = 'cf-turnstile-script'
-    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js'
-    script.async = true
-    document.head.appendChild(script)
-  }, [])
-
-  // Render nominate Turnstile widget
-  useEffect(() => {
-    if (!TURNSTILE_SITE_KEY || !nominateTurnstileRef.current) return
-    const checkAndRender = () => {
-      if (window.turnstile) {
-        window.turnstile.render(nominateTurnstileRef.current, {
-          sitekey: TURNSTILE_SITE_KEY,
-          callback: (token) => { nominateTurnstileToken.current = token },
-          'expired-callback': () => { nominateTurnstileToken.current = null }
-        })
-      } else {
-        setTimeout(checkAndRender, 500)
-      }
-    }
-    checkAndRender()
-  }, [])
-
   const handleSubmit = async () => {
     if (!ca.trim()) return
     setSubmitting(true)
@@ -70,7 +38,7 @@ export default function NominatePage() {
       const res = await fetch('/api/nominate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contractAddress: ca, turnstileToken: nominateTurnstileToken.current || 'dev' })
+        body: JSON.stringify({ contractAddress: ca })
       })
       const data = await res.json()
 
@@ -85,10 +53,6 @@ export default function NominatePage() {
       setSubmitMsg({ type: 'error', text: 'Network error. Try again.' })
     } finally {
       setSubmitting(false)
-      if (window.turnstile && nominateTurnstileRef.current) {
-        window.turnstile.reset(nominateTurnstileRef.current)
-        nominateTurnstileToken.current = null
-      }
     }
   }
 
@@ -97,21 +61,11 @@ export default function NominatePage() {
     setVotingId(tokenId)
     setVoteMsg(m => ({ ...m, [tokenId]: null }))
 
-    // Get vote turnstile token
-    let turnstileToken = voteTurnstileTokens.current[tokenId]
-
-    // If no token yet, render widget first
-    if (!turnstileToken) {
-      setVoteMsg(m => ({ ...m, [tokenId]: { type: 'info', text: 'Complete the captcha below to vote' } }))
-      setVotingId(null)
-      return
-    }
-
     try {
       const res = await fetch('/api/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tokenId, turnstileToken })
+        body: JSON.stringify({ tokenId })
       })
       const data = await res.json()
 
@@ -121,7 +75,9 @@ export default function NominatePage() {
           ...m,
           [tokenId]: {
             type: 'success',
-            text: data.qualified ? `🎉 Token qualified! ${data.votes} votes` : `✅ Voted! ${data.votes}/${VOTES_TO_QUALIFY} votes`
+            text: data.qualified
+              ? `🎉 Token qualified! ${data.votes} votes`
+              : `✅ Voted! ${data.votes}/${VOTES_TO_QUALIFY} votes`
           }
         }))
         fetchTokens()
@@ -132,27 +88,7 @@ export default function NominatePage() {
       setVoteMsg(m => ({ ...m, [tokenId]: { type: 'error', text: 'Network error' } }))
     } finally {
       setVotingId(null)
-      voteTurnstileTokens.current[tokenId] = null
     }
-  }
-
-  const renderVoteTurnstile = (tokenId) => {
-    if (!TURNSTILE_SITE_KEY) return
-    const el = voteTurnstileRefs.current[tokenId]
-    if (!el || el.dataset.rendered) return
-    el.dataset.rendered = '1'
-    const checkAndRender = () => {
-      if (window.turnstile) {
-        window.turnstile.render(el, {
-          sitekey: TURNSTILE_SITE_KEY,
-          callback: (token) => {
-            voteTurnstileTokens.current[tokenId] = token
-            setVoteMsg(m => ({ ...m, [tokenId]: { type: 'info', text: 'Captcha done! Click Vote again.' } }))
-          }
-        })
-      } else { setTimeout(checkAndRender, 500) }
-    }
-    checkAndRender()
   }
 
   const pending = tokens.filter(t => t.status === 'pending')
@@ -196,9 +132,6 @@ export default function NominatePage() {
             </button>
           </div>
 
-          {/* Turnstile for nominate */}
-          <div ref={nominateTurnstileRef} style={{ marginBottom: 12 }} />
-
           {submitMsg && (
             <div style={{
               padding: '10px 14px',
@@ -215,14 +148,15 @@ export default function NominatePage() {
           <div style={{ marginTop: 14, fontSize: 11, color: 'var(--muted)', lineHeight: 1.8 }}>
             ◾ Token must be on Solana and listed on DexScreener<br />
             ◾ Submission is free — no fees<br />
-            ◾ 50 votes needed to qualify for the race
+            ◾ 50 votes needed to qualify for the race<br />
+            ◾ 1 nomination per IP per hour
           </div>
         </div>
 
         {/* QUEUE */}
         {queued.length > 0 && (
           <div style={{ marginBottom: 28 }}>
-            <div style={{ display: 'flex', align: 'center', gap: 10, marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
               <div className="section-label" style={{ marginBottom: 0 }}>✅ QUALIFIED — RACE QUEUE</div>
               <span className="badge badge-green">{queued.length} / 10 READY</span>
             </div>
@@ -329,29 +263,18 @@ export default function NominatePage() {
                         className={`btn ${voted ? 'btn-outline' : 'btn-primary'}`}
                         style={{ opacity: voted ? 0.5 : 1, fontSize: 10, padding: '8px 16px' }}
                         disabled={voted || votingId === token.id}
-                        onClick={() => {
-                          if (!voteTurnstileTokens.current[token.id]) {
-                            renderVoteTurnstile(token.id)
-                          }
-                          handleVote(token.id)
-                        }}
+                        onClick={() => handleVote(token.id)}
                       >
                         {voted ? '✓ VOTED' : votingId === token.id ? 'VOTING...' : '▲ VOTE'}
                       </button>
                     </div>
                   </div>
 
-                  {/* Vote captcha */}
-                  <div
-                    ref={el => { voteTurnstileRefs.current[token.id] = el }}
-                    style={{ marginTop: 8 }}
-                  />
-
                   {msg && (
                     <div style={{
                       marginTop: 8, fontSize: 11, padding: '6px 10px', borderRadius: 3,
-                      background: msg.type === 'success' ? 'rgba(0,245,160,0.08)' : msg.type === 'error' ? 'rgba(255,61,107,0.08)' : 'rgba(0,217,245,0.08)',
-                      color: msg.type === 'success' ? 'var(--accent)' : msg.type === 'error' ? 'var(--danger)' : 'var(--accent2)'
+                      background: msg.type === 'success' ? 'rgba(0,245,160,0.08)' : 'rgba(255,61,107,0.08)',
+                      color: msg.type === 'success' ? 'var(--accent)' : 'var(--danger)'
                     }}>
                       {msg.text}
                     </div>

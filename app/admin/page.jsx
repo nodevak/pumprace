@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Navbar from '../components/Navbar'
-import { formatMcap, timeAgo } from '@/lib/format'
+import { formatMcap, timeAgo } from '../../lib/format'
 
 export default function AdminPage() {
   const [password, setPassword] = useState('')

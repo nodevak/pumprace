@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import sql, { initDB } from '@/lib/db'
-import { fetchTokenInfo } from '@/lib/dexscreener'
+import sql, { initDB } from '../../lib/db'
+import { fetchTokenInfo } from '../../lib/dexscreener'
 
 export async function POST(request) {
   try {
