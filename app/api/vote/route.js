@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
-import sql, { initDB } from '../../../lib/db'
+export const dynamic = 'force-dynamic'
+import { initDB } from '../../../lib/db'
 
 const VOTES_TO_QUALIFY = 50
 
 export async function POST(request) {
   try {
-    await initDB()
+    const sql = await initDB()
     const { tokenId } = await request.json()
     if (!tokenId) return NextResponse.json({ error: 'Token ID required' }, { status: 400 })
 
@@ -15,7 +16,6 @@ export async function POST(request) {
     if (token.length === 0) return NextResponse.json({ error: 'Token not found' }, { status: 404 })
     if (token[0].status !== 'pending') return NextResponse.json({ error: 'Token is already queued or racing' }, { status: 400 })
 
-    // 1 vote per IP per token
     const already = await sql`SELECT id FROM votes WHERE token_id = ${tokenId} AND voter_ip = ${ip}`
     if (already.length > 0) return NextResponse.json({ error: 'You already voted for this token' }, { status: 409 })
 

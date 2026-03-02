@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
-import sql, { initDB } from '../../../lib/db'
+import { initDB } from '../../../lib/db'
 
 export async function GET() {
   try {
-    await initDB()
+    const sql = await initDB()
     const winners = await sql`
       SELECT r.id as race_id, r.started_at, r.ended_at,
         t.name, t.ticker, t.logo_url, t.contract_address,

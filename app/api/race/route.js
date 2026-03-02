@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
-import sql, { initDB } from '../../../lib/db'
+export const dynamic = 'force-dynamic'
+import { initDB } from '../../../lib/db'
 
 export async function GET() {
   try {
-    await initDB()
+    const sql = await initDB()
 
     const races = await sql`SELECT * FROM races WHERE status IN ('live','waiting') ORDER BY id DESC LIMIT 1`
     if (races.length === 0) return NextResponse.json({ race: null, entries: [], snapshots: {} })
