@@ -6,7 +6,7 @@ export async function POST(request) {
   try {
     await initDB()
 
-    const { contractAddress, turnstileToken } = await request.json()
+    const { contractAddress } = await request.json()
 
     if (!contractAddress || contractAddress.trim().length < 32) {
       return NextResponse.json({ error: 'Invalid contract address' }, { status: 400 })
@@ -14,22 +14,20 @@ export async function POST(request) {
 
     const ca = contractAddress.trim()
 
-    // Verify Turnstile captcha
-    const turnstileRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        secret: process.env.TURNSTILE_SECRET_KEY,
-        response: turnstileToken
-      })
-    })
-    const turnstileData = await turnstileRes.json()
-    if (!turnstileData.success) {
-      return NextResponse.json({ error: 'Captcha failed. Please try again.' }, { status: 400 })
-    }
-
     // Get IP
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0] || 'unknown'
+
+    // Limit: 1 nomination per IP per hour
+    const recentNomination = await sql`
+      SELECT id FROM tokens
+      WHERE submitted_by_ip = ${ip}
+      AND created_at > NOW() - INTERVAL '1 hour'
+    `
+    if (recentNomination.length > 0) {
+      return NextResponse.json({
+        error: 'You can only nominate 1 token per hour. Try again later.'
+      }, { status: 429 })
+    }
 
     // Check if already exists
     const existing = await sql`SELECT id, status FROM tokens WHERE contract_address = ${ca}`

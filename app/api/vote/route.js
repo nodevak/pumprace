@@ -7,24 +7,10 @@ export async function POST(request) {
   try {
     await initDB()
 
-    const { tokenId, turnstileToken } = await request.json()
+    const { tokenId } = await request.json()
 
     if (!tokenId) {
       return NextResponse.json({ error: 'Token ID required' }, { status: 400 })
-    }
-
-    // Verify Turnstile captcha
-    const turnstileRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        secret: process.env.TURNSTILE_SECRET_KEY,
-        response: turnstileToken
-      })
-    })
-    const turnstileData = await turnstileRes.json()
-    if (!turnstileData.success) {
-      return NextResponse.json({ error: 'Captcha failed. Please try again.' }, { status: 400 })
     }
 
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0] || 'unknown'
@@ -38,7 +24,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'This token is already in the queue or racing' }, { status: 400 })
     }
 
-    // Check if already voted
+    // Check if already voted (1 vote per IP per token)
     const alreadyVoted = await sql`
       SELECT id FROM votes WHERE token_id = ${tokenId} AND voter_ip = ${ip}
     `
