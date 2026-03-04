@@ -15,7 +15,8 @@ export default function HomePage() {
   const timerRef = useRef(null)
   const canvasRef = useRef(null)
   const animRef = useRef(null)
-  const positionsRef = useRef({}) // smooth animated positions
+  const positionsRef = useRef({})
+  const imagesRef = useRef({})
 
   const fetchRace = useCallback(async () => {
     try {
@@ -44,169 +45,224 @@ export default function HomePage() {
     return () => clearInterval(timerRef.current)
   }, [timeLeft, race?.status])
 
-  // Canvas race track animation
+  // Preload token images
+  useEffect(() => {
+    entries.forEach(entry => {
+      if (entry.logo_url && !imagesRef.current[entry.token_id]) {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.onload = () => { imagesRef.current[entry.token_id] = img }
+        img.onerror = () => { imagesRef.current[entry.token_id] = null }
+        img.src = entry.logo_url
+      }
+    })
+  }, [entries])
+
+  // Canvas race track
   useEffect(() => {
     if (!canvasRef.current || !entries.length || race?.status !== 'live') return
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
 
-    const maxMcap = Math.max(...entries.map(e => Number(e.current_mcap)))
-    const minMcap = Math.min(...entries.map(e => Number(e.current_mcap)))
-    const range = maxMcap - minMcap || 1
+    // Sort entries by mcap descending — leader is row 0
+    const sorted = [...entries].sort((a, b) => Number(b.current_mcap) - Number(a.current_mcap))
 
-    // Init positions if needed
-    entries.forEach(e => {
+    // Calculate target positions: 0 = start, 1 = finish
+    // Use relative mcap spread so tokens don't all bunch at finish
+    const mcaps = sorted.map(e => Number(e.current_mcap))
+    const maxMcap = Math.max(...mcaps)
+    const minMcap = Math.min(...mcaps)
+    const range = maxMcap - minMcap
+
+    function getTarget(entry) {
+      if (entry.is_rugged) return 0.02
+      const mcap = Number(entry.current_mcap)
+      if (range === 0) return 0.5 // all equal — put in middle
+      // Leader gets 0.92, last gets 0.08, everyone else proportional
+      return 0.08 + ((mcap - minMcap) / range) * 0.84
+    }
+
+    sorted.forEach(e => {
       if (positionsRef.current[e.token_id] === undefined) {
-        positionsRef.current[e.token_id] = 0
+        positionsRef.current[e.token_id] = getTarget(e) * 0.3
       }
     })
 
-    const PADDING_LEFT = 140
-    const PADDING_RIGHT = 80
-    const LANE_HEIGHT = 64
-    const TRACK_WIDTH = canvas.width - PADDING_LEFT - PADDING_RIGHT
+    const PADDING_LEFT = 120
+    const PADDING_RIGHT = 72
+    const LANE_HEIGHT = 68
 
     function lerp(a, b, t) { return a + (b - a) * t }
 
-    function draw(timestamp) {
+    function drawRoundedImage(ctx, img, x, y, r) {
+      ctx.save()
+      ctx.beginPath()
+      ctx.arc(x, y, r, 0, Math.PI * 2)
+      ctx.clip()
+      ctx.drawImage(img, x - r, y - r, r * 2, r * 2)
+      ctx.restore()
+    }
+
+    function draw() {
       const W = canvas.width
       const H = canvas.height
       ctx.clearRect(0, 0, W, H)
 
-      // Background
-      ctx.fillStyle = '#06050f'
-      ctx.fillRect(0, 0, W, H)
+      const TRACK_WIDTH = W - PADDING_LEFT - PADDING_RIGHT
 
-      entries.forEach((entry, i) => {
-        const y = i * LANE_HEIGHT
-        const target = entry.is_rugged ? 0.02 : (Number(entry.current_mcap) - minMcap) / range
-        const current = positionsRef.current[entry.token_id] ?? 0
-        positionsRef.current[entry.token_id] = lerp(current, target, 0.05)
+      sorted.forEach((entry, i) => {
+        const laneY = i * LANE_HEIGHT
+        const midY = laneY + LANE_HEIGHT / 2
+        const color = COLORS[entries.findIndex(e => e.token_id === entry.token_id) % COLORS.length]
+        const isLeader = i === 0 && !entry.is_rugged
+
+        const target = getTarget(entry)
+        const cur = positionsRef.current[entry.token_id] ?? target
+        positionsRef.current[entry.token_id] = lerp(cur, target, 0.04)
         const pos = positionsRef.current[entry.token_id]
-        const color = COLORS[i % COLORS.length]
-        const x = PADDING_LEFT + pos * TRACK_WIDTH
-        const isLeader = i === 0
+        const tokenX = PADDING_LEFT + pos * TRACK_WIDTH
 
-        // Lane background
-        const laneGrad = ctx.createLinearGradient(0, y, 0, y + LANE_HEIGHT)
-        laneGrad.addColorStop(0, `${color}08`)
-        laneGrad.addColorStop(0.5, `${color}04`)
-        laneGrad.addColorStop(1, `${color}08`)
+        // Lane bg
+        const laneGrad = ctx.createLinearGradient(0, laneY, 0, laneY + LANE_HEIGHT)
+        laneGrad.addColorStop(0, `${color}0a`)
+        laneGrad.addColorStop(0.5, `${color}05`)
+        laneGrad.addColorStop(1, `${color}0a`)
         ctx.fillStyle = laneGrad
-        ctx.fillRect(0, y, W, LANE_HEIGHT)
+        ctx.fillRect(0, laneY, W, LANE_HEIGHT)
 
         // Lane separator
-        ctx.strokeStyle = '#1e1a3530'
+        ctx.strokeStyle = '#1e1a3540'
         ctx.lineWidth = 1
         ctx.beginPath()
-        ctx.moveTo(0, y + LANE_HEIGHT)
-        ctx.lineTo(W, y + LANE_HEIGHT)
+        ctx.moveTo(0, laneY + LANE_HEIGHT)
+        ctx.lineTo(W, laneY + LANE_HEIGHT)
         ctx.stroke()
 
-        // Dashed track line
-        ctx.setLineDash([6, 8])
-        ctx.strokeStyle = `${color}20`
+        // Dashed center line
+        ctx.setLineDash([5, 10])
+        ctx.strokeStyle = `${color}18`
         ctx.lineWidth = 1
         ctx.beginPath()
-        ctx.moveTo(PADDING_LEFT, y + LANE_HEIGHT / 2)
-        ctx.lineTo(W - PADDING_RIGHT, y + LANE_HEIGHT / 2)
+        ctx.moveTo(PADDING_LEFT, midY)
+        ctx.lineTo(W - PADDING_RIGHT, midY)
         ctx.stroke()
         ctx.setLineDash([])
 
         // Token name left
+        ctx.textAlign = 'right'
         ctx.font = `500 11px 'DM Mono', monospace`
         ctx.fillStyle = entry.is_rugged ? '#3d3660' : color
-        ctx.textAlign = 'right'
-        ctx.fillText(`$${entry.ticker}`, PADDING_LEFT - 12, y + LANE_HEIGHT / 2 - 6)
+        ctx.fillText(`$${entry.ticker}`, PADDING_LEFT - 10, midY - 5)
         ctx.font = `300 9px 'DM Mono', monospace`
         ctx.fillStyle = '#3d3660'
-        ctx.fillText(formatMcap(entry.current_mcap), PADDING_LEFT - 12, y + LANE_HEIGHT / 2 + 8)
+        ctx.fillText(formatMcap(entry.current_mcap), PADDING_LEFT - 10, midY + 9)
 
-        // Trail glow
+        // Trail
         if (!entry.is_rugged) {
-          const trailGrad = ctx.createLinearGradient(PADDING_LEFT, 0, x, 0)
+          const trailGrad = ctx.createLinearGradient(PADDING_LEFT, 0, tokenX, 0)
           trailGrad.addColorStop(0, 'transparent')
-          trailGrad.addColorStop(1, `${color}18`)
+          trailGrad.addColorStop(1, `${color}22`)
           ctx.fillStyle = trailGrad
-          ctx.fillRect(PADDING_LEFT, y + LANE_HEIGHT / 2 - 2, x - PADDING_LEFT, 4)
+          ctx.fillRect(PADDING_LEFT, midY - 2, tokenX - PADDING_LEFT, 4)
         }
 
-        // Glow behind token
-        if (!entry.is_rugged && isLeader) {
-          const glow = ctx.createRadialGradient(x, y + LANE_HEIGHT / 2, 0, x, y + LANE_HEIGHT / 2, 32)
-          glow.addColorStop(0, `${color}40`)
+        // Leader glow
+        if (isLeader) {
+          const glow = ctx.createRadialGradient(tokenX, midY, 0, tokenX, midY, 36)
+          glow.addColorStop(0, `${color}50`)
           glow.addColorStop(1, 'transparent')
           ctx.fillStyle = glow
           ctx.beginPath()
-          ctx.arc(x, y + LANE_HEIGHT / 2, 32, 0, Math.PI * 2)
+          ctx.arc(tokenX, midY, 36, 0, Math.PI * 2)
           ctx.fill()
         }
 
         // Token circle
-        const radius = entry.is_rugged ? 12 : isLeader ? 20 : 16
-        ctx.beginPath()
-        ctx.arc(x, y + LANE_HEIGHT / 2, radius, 0, Math.PI * 2)
-        if (entry.is_rugged) {
-          ctx.fillStyle = '#1e1a35'
+        const radius = isLeader ? 22 : entry.is_rugged ? 13 : 18
+        const img = imagesRef.current[entry.token_id]
+
+        if (img) {
+          // Draw circular image
+          ctx.save()
+          ctx.beginPath()
+          ctx.arc(tokenX, midY, radius, 0, Math.PI * 2)
+          ctx.clip()
+          ctx.drawImage(img, tokenX - radius, midY - radius, radius * 2, radius * 2)
+          ctx.restore()
+          // Border ring
+          ctx.beginPath()
+          ctx.arc(tokenX, midY, radius, 0, Math.PI * 2)
+          ctx.strokeStyle = entry.is_rugged ? '#3d3660' : color
+          ctx.lineWidth = isLeader ? 2.5 : 1.5
+          ctx.stroke()
         } else {
-          const grad = ctx.createRadialGradient(x - 4, y + LANE_HEIGHT / 2 - 4, 0, x, y + LANE_HEIGHT / 2, radius)
-          grad.addColorStop(0, color + 'ff')
-          grad.addColorStop(1, color + '66')
+          // Fallback colored circle
+          ctx.beginPath()
+          ctx.arc(tokenX, midY, radius, 0, Math.PI * 2)
+          const grad = ctx.createRadialGradient(tokenX - 4, midY - 4, 0, tokenX, midY, radius)
+          grad.addColorStop(0, entry.is_rugged ? '#1e1a35' : color + 'ff')
+          grad.addColorStop(1, entry.is_rugged ? '#0c0a18' : color + '55')
           ctx.fillStyle = grad
+          ctx.fill()
+          ctx.strokeStyle = entry.is_rugged ? '#3d3660' : color
+          ctx.lineWidth = isLeader ? 2.5 : 1.5
+          ctx.stroke()
+          // Initials
+          ctx.font = `bold ${isLeader ? 12 : 10}px 'DM Mono', monospace`
+          ctx.fillStyle = entry.is_rugged ? '#3d3660' : '#000'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(entry.ticker?.slice(0, 2).toUpperCase(), tokenX, midY)
+          ctx.textBaseline = 'alphabetic'
         }
-        ctx.fill()
-        ctx.strokeStyle = entry.is_rugged ? '#3d3660' : color
-        ctx.lineWidth = isLeader ? 2.5 : 1.5
-        ctx.stroke()
 
-        // Token symbol or emoji
-        ctx.font = `bold ${entry.is_rugged ? 10 : isLeader ? 13 : 11}px 'DM Mono', monospace`
-        ctx.fillStyle = entry.is_rugged ? '#3d3660' : '#000'
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        const label = entry.is_rugged ? '💀' : entry.ticker?.slice(0, 2).toUpperCase()
-        ctx.fillText(label, x, y + LANE_HEIGHT / 2)
-        ctx.textBaseline = 'alphabetic'
+        // Crown above leader
+        if (isLeader) {
+          ctx.font = '14px serif'
+          ctx.textAlign = 'center'
+          ctx.fillText('👑', tokenX, midY - radius - 4)
+        }
 
-        // Rank on right
-        ctx.font = `400 10px 'DM Mono', monospace`
-        ctx.fillStyle = isLeader ? 'var(--gold, #c9a84c)' : '#3d3660'
+        // Rank + % on right
+        const chg = Number(entry.start_mcap) > 0
+          ? ((Number(entry.current_mcap) - Number(entry.start_mcap)) / Number(entry.start_mcap) * 100)
+          : 0
         ctx.textAlign = 'left'
-        const chg = Number(entry.start_mcap) > 0 ? ((Number(entry.current_mcap) - Number(entry.start_mcap)) / Number(entry.start_mcap) * 100) : 0
+        ctx.font = `500 10px 'DM Mono', monospace`
         ctx.fillStyle = isLeader ? '#c9a84c' : '#3d3660'
-        ctx.fillText(`#${i + 1}`, W - PADDING_RIGHT + 10, y + LANE_HEIGHT / 2 - 4)
+        ctx.fillText(`#${i + 1}`, W - PADDING_RIGHT + 10, midY - 4)
         ctx.font = `300 9px 'DM Mono', monospace`
         ctx.fillStyle = chg > 0 ? '#00e5cc' : chg < 0 ? '#e63950' : '#3d3660'
-        ctx.fillText(`${chg >= 0 ? '+' : ''}${chg.toFixed(1)}%`, W - PADDING_RIGHT + 10, y + LANE_HEIGHT / 2 + 8)
+        ctx.fillText(`${chg >= 0 ? '+' : ''}${chg.toFixed(1)}%`, W - PADDING_RIGHT + 10, midY + 8)
       })
 
       // START LINE
-      ctx.strokeStyle = 'rgba(255,255,255,0.12)'
-      ctx.lineWidth = 2
-      ctx.setLineDash([4, 4])
+      ctx.strokeStyle = 'rgba(255,255,255,0.1)'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([4, 5])
       ctx.beginPath()
       ctx.moveTo(PADDING_LEFT, 0)
-      ctx.lineTo(PADDING_LEFT, entries.length * LANE_HEIGHT)
+      ctx.lineTo(PADDING_LEFT, sorted.length * LANE_HEIGHT)
       ctx.stroke()
       ctx.setLineDash([])
-      ctx.font = `500 9px 'DM Mono', monospace`
-      ctx.fillStyle = 'rgba(255,255,255,0.2)'
+      ctx.font = `400 9px 'DM Mono', monospace`
+      ctx.fillStyle = 'rgba(255,255,255,0.18)'
       ctx.textAlign = 'center'
-      ctx.fillText('START', PADDING_LEFT, entries.length * LANE_HEIGHT + 16)
+      ctx.fillText('START', PADDING_LEFT, sorted.length * LANE_HEIGHT + 16)
 
-      // FINISH LINE — checkered
+      // FINISH LINE — checkered flag
       const FX = W - PADDING_RIGHT
-      const checkSize = 8
-      const totalH = entries.length * LANE_HEIGHT
-      for (let cy = 0; cy < totalH; cy += checkSize) {
+      const cs = 8
+      const totalH = sorted.length * LANE_HEIGHT
+      for (let cy = 0; cy < totalH; cy += cs) {
         for (let cx = 0; cx < 2; cx++) {
-          const isWhite = (Math.floor(cy / checkSize) + cx) % 2 === 0
-          ctx.fillStyle = isWhite ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)'
-          ctx.fillRect(FX + cx * checkSize - checkSize, cy, checkSize, Math.min(checkSize, totalH - cy))
+          const white = (Math.floor(cy / cs) + cx) % 2 === 0
+          ctx.fillStyle = white ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.25)'
+          ctx.fillRect(FX + cx * cs - cs, cy, cs, Math.min(cs, totalH - cy))
         }
       }
-      ctx.font = `500 9px 'DM Mono', monospace`
-      ctx.fillStyle = 'rgba(255,255,255,0.4)'
+      ctx.fillStyle = 'rgba(255,255,255,0.35)'
+      ctx.font = `400 9px 'DM Mono', monospace`
       ctx.textAlign = 'center'
       ctx.fillText('FINISH', FX, totalH + 16)
 
@@ -217,13 +273,13 @@ export default function HomePage() {
     return () => cancelAnimationFrame(animRef.current)
   }, [entries, race?.status])
 
-  // Resize canvas
+  // Canvas resize
   useEffect(() => {
     const resize = () => {
       if (!canvasRef.current) return
       const container = canvasRef.current.parentElement
       canvasRef.current.width = container.clientWidth
-      canvasRef.current.height = entries.length * 64 + 24
+      canvasRef.current.height = entries.length * 68 + 28
     }
     resize()
     window.addEventListener('resize', resize)
@@ -271,7 +327,7 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* WAITING / NO RACE */}
+        {/* WAITING */}
         {race?.status === 'waiting' && (
           <div className="fade-in-up" style={{ textAlign: 'center', padding: '80px 20px', marginBottom: 40 }}>
             <div style={{ fontSize: 64, marginBottom: 16, animation: 'crownFloat 3s ease-in-out infinite' }}>🏁</div>
@@ -302,13 +358,10 @@ export default function HomePage() {
                 <div style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1 }}>UPDATES EVERY 30S</div>
               </div>
             </div>
-
             <div style={{
               background: 'linear-gradient(145deg, rgba(12,10,24,0.98), rgba(6,5,15,0.95))',
               border: '1px solid var(--border)',
-              borderRadius: 16,
-              overflow: 'hidden',
-              position: 'relative',
+              borderRadius: 16, overflow: 'hidden', position: 'relative',
               boxShadow: '0 20px 60px rgba(0,0,0,0.5)'
             }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(201,168,76,0.3), transparent)' }} />
@@ -327,16 +380,18 @@ export default function HomePage() {
                 const chg = Number(entry.start_mcap) > 0 ? ((Number(entry.current_mcap) - Number(entry.start_mcap)) / Number(entry.start_mcap) * 100) : 0
                 return (
                   <div key={entry.token_id} style={{
-                    display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '10px 14px', borderRadius: 8,
-                    background: rank === 0 ? `${color}08` : 'transparent',
+                    display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+                    borderRadius: 8, background: rank === 0 ? `${color}08` : 'transparent',
                     border: `1px solid ${rank === 0 ? color + '25' : 'transparent'}`,
                     opacity: entry.is_rugged ? 0.4 : 1
                   }}>
                     <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, color: rank === 0 ? color : 'var(--muted)', minWidth: 28 }}>
                       {entry.is_rugged ? '💀' : rank === 0 ? '👑' : `#${rank + 1}`}
                     </div>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: entry.is_rugged ? 'var(--muted)' : color, flexShrink: 0 }} />
+                    {entry.logo_url
+                      ? <img src={entry.logo_url} alt={entry.name} style={{ width: 24, height: 24, borderRadius: '50%', border: `1px solid ${color}40` }} onError={e => e.target.style.display='none'} />
+                      : <div style={{ width: 24, height: 24, borderRadius: '50%', background: `${color}20`, border: `1px solid ${color}40`, flexShrink: 0 }} />
+                    }
                     <div style={{ flex: 1, fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: 1, color: rank === 0 ? color : 'var(--text)' }}>{entry.name}</div>
                     <div style={{ fontSize: 10, color: 'var(--muted)' }}>${entry.ticker}</div>
                     <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, color: rank === 0 ? color : 'var(--text)', minWidth: 70, textAlign: 'right' }}>{formatMcap(entry.current_mcap)}</div>
@@ -353,9 +408,8 @@ export default function HomePage() {
         {/* TREASURY */}
         <div className="fade-in" style={{
           background: 'linear-gradient(135deg, rgba(201,168,76,0.07), rgba(12,10,24,0.9))',
-          border: '1px solid rgba(201,168,76,0.18)',
-          borderRadius: 16, padding: '32px 36px',
-          display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap',
+          border: '1px solid rgba(201,168,76,0.18)', borderRadius: 16,
+          padding: '32px 36px', display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap',
           position: 'relative', overflow: 'hidden'
         }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(201,168,76,0.4), transparent)' }} />
