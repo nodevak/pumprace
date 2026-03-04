@@ -6,7 +6,7 @@ export async function GET() {
   try {
     const sql = await initDB()
 
-    const races = await sql`SELECT * FROM races WHERE status IN ('live','waiting') ORDER BY id DESC LIMIT 1`
+    const races = await sql`SELECT * FROM races WHERE status = 'live' OR status = 'waiting' ORDER BY id DESC LIMIT 1`
     if (races.length === 0) return NextResponse.json({ race: null, entries: [], snapshots: {} })
 
     const race = races[0]
@@ -40,6 +40,6 @@ export async function GET() {
     return NextResponse.json({ race, entries, snapshots, timeLeftSeconds })
   } catch (err) {
     console.error('Race GET error:', err)
-    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+    return NextResponse.json({ error: 'Server error', details: err.message }, { status: 500 })
   }
 }
