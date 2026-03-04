@@ -1,6 +1,9 @@
-# 🏁 PUMPRACE — Pump.fun Token Battle Arena
+# 🏁 PUMPRACE Pump.fun Token Battle Arena
+
+<img width="1024" height="1024" alt="pumprace" src="https://github.com/user-attachments/assets/36ba188c-1154-472f-9b6a-f1572bf86278" />
 
 > 10 tokens. 4 hours. One winner takes the treasury.
+
 
 PUMPRACE is a community-driven Solana token racing platform. Nominate your token, earn community votes to qualify, and race against 9 other tokens to the highest market cap. The winner becomes the official PUMPRACE treasury token and their community receives the $pRACE fees.
 
