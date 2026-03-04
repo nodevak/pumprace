@@ -9,7 +9,7 @@ export default function Navbar() {
       <div className="nav-inner">
         <Link href="/" className="nav-logo">PUMP<span>RACE</span></Link>
         <ul className="nav-links">
-          <li><Link href="/" className={path === '/' ? 'active' : ''}>◈ Live Race</Link></li>
+          <li><Link href="/" className={path === '/' ? 'active' : ''}>◈ CA:</Link></li>
           <li><Link href="/nominate" className={path === '/nominate' ? 'active' : ''}>+ Nominate</Link></li>
           <li><Link href="/hall-of-fame" className={path === '/hall-of-fame' ? 'active' : ''}>🏆 Champions</Link></li>
           <li><Link href="/how-it-works" className={path === '/how-it-works' ? 'active' : ''}>? Rules</Link></li>

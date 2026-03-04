@@ -1,7 +1,7 @@
 import './globals.css'
 
 export const metadata = {
-  title: 'PUMPRACE — Solana MCAP Battle Arena',
+  title: 'PUMPRACE',
   description: 'Nominate your Solana token, earn votes, and race to the highest market cap.',
 }
 
